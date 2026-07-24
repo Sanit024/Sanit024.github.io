@@ -15,7 +15,9 @@ const CATEGORIES = {
 };
 
 const RSS2JSON = "https://api.rss2json.com/v1/api.json?rss_url=";
+const ALLORIGINS = "https://api.allorigins.win/raw?url=";
 const CACHE_TTL_MS = 20 * 60 * 1000; // 20분 캐시
+const FETCH_TIMEOUT_MS = 12000;
 
 // "전체" 탭 기사의 분야 배지를 추정하기 위한 키워드
 const CATEGORY_GUESS = [
@@ -146,6 +148,44 @@ function writeCache(catKey, items) {
   }
 }
 
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseRssXml(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (doc.querySelector("parsererror")) throw new Error("XML 파싱 오류");
+  return Array.from(doc.querySelectorAll("item")).map(item => ({
+    title: item.querySelector("title")?.textContent || "",
+    link: item.querySelector("link")?.textContent || "",
+    pubDate: item.querySelector("pubDate")?.textContent || "",
+    description: item.querySelector("description")?.textContent || ""
+  }));
+}
+
+// 1차: rss2json (빠르고 정제된 JSON 응답)
+async function fetchViaRss2Json(feedUrl) {
+  const res = await fetchWithTimeout(RSS2JSON + encodeURIComponent(feedUrl));
+  if (!res.ok) throw new Error(`rss2json HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.status !== "ok") throw new Error(data.message || "rss2json 오류");
+  return data.items;
+}
+
+// 2차 대안: allorigins로 원본 RSS XML을 가져와 직접 파싱 (rss2json이 차단/장애일 때 대비)
+async function fetchViaAllOrigins(feedUrl) {
+  const res = await fetchWithTimeout(ALLORIGINS + encodeURIComponent(feedUrl));
+  if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
+  const text = await res.text();
+  return parseRssXml(text);
+}
+
 async function fetchCategory(catKey, { force = false } = {}) {
   if (!force) {
     const cached = readCache(catKey);
@@ -153,12 +193,23 @@ async function fetchCategory(catKey, { force = false } = {}) {
   }
 
   const cfg = CATEGORIES[catKey];
-  const res = await fetch(RSS2JSON + encodeURIComponent(cfg.feed));
-  if (!res.ok) throw new Error("network");
-  const data = await res.json();
-  if (data.status !== "ok") throw new Error(data.message || "feed error");
+  let rawItems;
+  let lastErr;
 
-  const items = data.items.slice(0, 15).map(it => ({
+  try {
+    rawItems = await fetchViaRss2Json(cfg.feed);
+  } catch (e1) {
+    lastErr = e1;
+    try {
+      rawItems = await fetchViaAllOrigins(cfg.feed);
+    } catch (e2) {
+      lastErr = e2;
+    }
+  }
+
+  if (!rawItems) throw lastErr || new Error("알 수 없는 오류");
+
+  const items = rawItems.slice(0, 15).map(it => ({
     title: stripTags(it.title),
     link: it.link,
     pubDate: it.pubDate,
@@ -256,7 +307,9 @@ async function loadAndRender(catKey, { force = false } = {}) {
     meta.textContent = `${CATEGORIES[catKey].label} · ${items.length}건` + (fromCache ? " (캐시됨)" : "");
   } catch (err) {
     meta.textContent = "";
-    renderStatus("뉴스를 불러오지 못했습니다. 잠시 후 다시 시도하거나 원문 사이트에서 확인해주세요.", {
+    console.error("뉴스 로딩 실패:", err);
+    const reason = err && err.name === "AbortError" ? "응답 시간 초과" : (err?.message || "알 수 없는 오류");
+    renderStatus(`뉴스를 불러오지 못했습니다 (${reason}). 잠시 후 다시 시도하거나 원문 사이트에서 확인해주세요.`, {
       link: CATEGORIES[catKey].home,
       linkText: `${CATEGORIES[catKey].label} 뉴스 원문 사이트`
     });
