@@ -20,8 +20,9 @@ const KOREAN_SOURCE = {
   feed: "https://www.hellodd.com/rss/allArticle.xml",
   home: "https://www.hellodd.com"
 };
-const KOREAN_ITEMS_ALL_TAB = 8;   // "전체" 탭에서 보여줄 국문 기사 수
-const KOREAN_ITEMS_PER_CAT = 6;   // 분야별 탭에서 필터링해 보여줄 국문 기사 수(최대)
+const KOREAN_ITEMS_ALL_TAB = 30;  // "전체" 탭에서 보여줄 국문 기사 수(최대, 무한 스크롤 풀)
+const KOREAN_ITEMS_PER_CAT = 30;  // 분야별 탭에서 필터링해 보여줄 국문 기사 수(최대)
+const ENGLISH_ITEMS_LIMIT = 50;   // 분야별 탭에서 가져올 영문 기사 수(최대, 무한 스크롤 풀)
 
 const RSS2JSON = "https://api.rss2json.com/v1/api.json?rss_url=";
 const ALLORIGINS = "https://api.allorigins.win/raw?url=";
@@ -29,6 +30,7 @@ const TRANSLATE_API = "https://api.mymemory.translated.net/get?langpair=en|ko&q=
 const CACHE_TTL_MS = 20 * 60 * 1000;        // 뉴스 목록 캐시: 20분
 const TRANSLATE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 번역 캐시: 7일
 const FETCH_TIMEOUT_MS = 12000;
+const PAGE_SIZE = 10; // 무한 스크롤 시 한 번에 추가로 렌더링할 기사 수
 
 // "전체" 탭 영문 기사의 분야 배지를 추정하기 위한 키워드
 const CATEGORY_GUESS_EN = [
@@ -240,7 +242,7 @@ function parseRssXml(xmlText) {
 
 // 1차: rss2json (빠르고 정제된 JSON 응답)
 async function fetchViaRss2Json(feedUrl) {
-  const res = await fetchWithTimeout(RSS2JSON + encodeURIComponent(feedUrl));
+  const res = await fetchWithTimeout(RSS2JSON + encodeURIComponent(feedUrl) + "&count=100");
   if (!res.ok) throw new Error(`rss2json HTTP ${res.status}`);
   const data = await res.json();
   if (data.status !== "ok") throw new Error(data.message || "rss2json 오류");
@@ -275,7 +277,7 @@ function normalizeItems(rawItems, extra) {
 
 async function fetchEnglishItems(catKey) {
   const raw = await fetchRawFeed(CATEGORIES[catKey].feed);
-  return normalizeItems(raw.slice(0, 15), { lang: "en", sourceLabel: "ScienceDaily" });
+  return normalizeItems(raw.slice(0, ENGLISH_ITEMS_LIMIT), { lang: "en", sourceLabel: "ScienceDaily" });
 }
 
 async function fetchKoreanItems(catKey) {
@@ -342,6 +344,63 @@ function renderStatus(message, { link, linkText } = {}) {
     (link ? `<p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(linkText || "원문 사이트에서 보기")} →</a></p>` : "");
 }
 
+let scrollObserver = null;
+
+function buildNewsCard(article, idx, catKey) {
+  const badgeKey = catKey === "all"
+    ? (article.lang === "ko" ? guessCategoryKo(`${article.title} ${article.description}`) : guessCategoryEn(`${article.title} ${article.description}`))
+    : catKey;
+  const badgeLabel = badgeKey ? CATEGORIES[badgeKey].label : "과학 일반";
+  const sourceBadge = article.lang === "ko" ? "🇰🇷 국문" : "🇺🇸 영문·번역";
+
+  const card = document.createElement("article");
+  card.className = "news-card";
+  card.innerHTML = `
+    <div class="news-card-top">
+      <span class="category-badge">${escapeHtml(badgeLabel)}</span>
+      <span class="source-badge">${sourceBadge} · ${escapeHtml(article.sourceLabel)}</span>
+      <span class="news-date">${escapeHtml(formatDate(article.pubDate))}</span>
+    </div>
+    <h3 class="news-title" data-role="title">
+      <a href="${escapeHtml(article.link)}" target="_blank" rel="noopener">${escapeHtml(article.title)}</a>
+    </h3>
+    ${article.lang === "en" ? `<p class="news-original" data-role="original" hidden>원문: ${escapeHtml(article.title)}</p>` : ""}
+    <p class="news-desc">${escapeHtml(article.description)}</p>
+    <div class="news-actions">
+      <a class="source-link" href="${escapeHtml(article.link)}" target="_blank" rel="noopener">📄 원문 기사 보기</a>
+      <button class="topic-toggle" data-idx="${idx}">🎓 생기부 탐구주제 추천</button>
+    </div>
+    <div class="topic-panel" id="topic-${idx}" hidden></div>
+  `;
+
+  const toggleBtn = card.querySelector(".topic-toggle");
+  const panel = card.querySelector(".topic-panel");
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = panel.hidden;
+    if (isHidden && !panel.dataset.loaded) {
+      const topics = buildTopics(article, catKey);
+      panel.innerHTML = `<h4>💡 추천 탐구주제 (참고용)</h4><ul>${topics.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>`;
+      panel.dataset.loaded = "1";
+    }
+    panel.hidden = !isHidden;
+    toggleBtn.classList.toggle("open", !panel.hidden);
+    toggleBtn.textContent = !panel.hidden ? "🎓 탐구주제 숨기기" : "🎓 생기부 탐구주제 추천";
+  });
+
+  // 영문 기사는 헤드라인을 한글로 번역해 교체 (원문은 아래 작은 글씨로 표시)
+  if (article.lang === "en") {
+    translateToKorean(article.title).then(ko => {
+      if (!ko) return;
+      const titleLink = card.querySelector('[data-role="title"] a');
+      const originalP = card.querySelector('[data-role="original"]');
+      if (titleLink) titleLink.textContent = ko;
+      if (originalP) originalP.hidden = false;
+    });
+  }
+
+  return card;
+}
+
 function renderNews(items, catKey) {
   const box = document.getElementById("statusBox");
   box.hidden = true;
@@ -349,64 +408,50 @@ function renderNews(items, catKey) {
   const list = document.getElementById("newsList");
   list.innerHTML = "";
 
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
+
   if (!items.length) {
     renderStatus("표시할 뉴스가 없습니다.");
     return;
   }
 
-  items.forEach((article, idx) => {
-    const badgeKey = catKey === "all"
-      ? (article.lang === "ko" ? guessCategoryKo(`${article.title} ${article.description}`) : guessCategoryEn(`${article.title} ${article.description}`))
-      : catKey;
-    const badgeLabel = badgeKey ? CATEGORIES[badgeKey].label : "과학 일반";
-    const sourceBadge = article.lang === "ko" ? "🇰🇷 국문" : "🇺🇸 영문·번역";
+  const sentinel = document.createElement("div");
+  sentinel.className = "scroll-sentinel";
+  sentinel.textContent = "더 많은 기사를 불러오는 중…";
+  list.appendChild(sentinel);
 
-    const card = document.createElement("article");
-    card.className = "news-card";
-    card.innerHTML = `
-      <div class="news-card-top">
-        <span class="category-badge">${escapeHtml(badgeLabel)}</span>
-        <span class="source-badge">${sourceBadge} · ${escapeHtml(article.sourceLabel)}</span>
-        <span class="news-date">${escapeHtml(formatDate(article.pubDate))}</span>
-      </div>
-      <h3 class="news-title" data-role="title">
-        <a href="${escapeHtml(article.link)}" target="_blank" rel="noopener">${escapeHtml(article.title)}</a>
-      </h3>
-      ${article.lang === "en" ? `<p class="news-original" data-role="original" hidden>원문: ${escapeHtml(article.title)}</p>` : ""}
-      <p class="news-desc">${escapeHtml(article.description)}</p>
-      <div class="news-actions">
-        <a class="source-link" href="${escapeHtml(article.link)}" target="_blank" rel="noopener">📄 원문 기사 보기</a>
-        <button class="topic-toggle" data-idx="${idx}">🎓 생기부 탐구주제 추천</button>
-      </div>
-      <div class="topic-panel" id="topic-${idx}" hidden></div>
-    `;
-    list.appendChild(card);
+  let renderedCount = 0;
 
-    const toggleBtn = card.querySelector(".topic-toggle");
-    const panel = card.querySelector(".topic-panel");
-    toggleBtn.addEventListener("click", () => {
-      const isHidden = panel.hidden;
-      if (isHidden && !panel.dataset.loaded) {
-        const topics = buildTopics(article, catKey);
-        panel.innerHTML = `<h4>💡 추천 탐구주제 (참고용)</h4><ul>${topics.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>`;
-        panel.dataset.loaded = "1";
-      }
-      panel.hidden = !isHidden;
-      toggleBtn.classList.toggle("open", !panel.hidden);
-      toggleBtn.textContent = !panel.hidden ? "🎓 탐구주제 숨기기" : "🎓 생기부 탐구주제 추천";
+  function renderNextBatch() {
+    const next = items.slice(renderedCount, renderedCount + PAGE_SIZE);
+    next.forEach((article, i) => {
+      const card = buildNewsCard(article, renderedCount + i, catKey);
+      list.insertBefore(card, sentinel);
     });
+    renderedCount += next.length;
 
-    // 영문 기사는 헤드라인을 한글로 번역해 교체 (원문은 아래 작은 글씨로 표시)
-    if (article.lang === "en") {
-      translateToKorean(article.title).then(ko => {
-        if (!ko) return;
-        const titleLink = card.querySelector('[data-role="title"] a');
-        const originalP = card.querySelector('[data-role="original"]');
-        if (titleLink) titleLink.textContent = ko;
-        if (originalP) originalP.hidden = false;
-      });
+    if (renderedCount >= items.length) {
+      sentinel.hidden = true;
+      if (scrollObserver) {
+        scrollObserver.disconnect();
+        scrollObserver = null;
+      }
     }
-  });
+  }
+
+  renderNextBatch();
+
+  if (renderedCount < items.length) {
+    scrollObserver = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) renderNextBatch();
+    }, { rootMargin: "400px" });
+    scrollObserver.observe(sentinel);
+  } else {
+    sentinel.hidden = true;
+  }
 }
 
 async function loadAndRender(catKey, { force = false } = {}) {

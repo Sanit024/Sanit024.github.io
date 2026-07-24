@@ -256,3 +256,13 @@ main {
 .loading-dot {
   animation: pulse 1.2s ease-in-out infinite;
 }
+
+.scroll-sentinel {
+  text-align: center;
+  padding: 1.5rem 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.scroll-sentinel[hidden] { display: none; }
