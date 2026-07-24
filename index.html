@@ -3,64 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>삼성 vs 애플 핸드폰 가격 비교</title>
+<title>과학·기술 뉴스 헤드라인 & 탐구주제 추천</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="site-header">
-  <h1>📱 삼성 vs 애플 핸드폰 가격 비교</h1>
-  <p class="subtitle">최신 갤럭시 · 아이폰 라인업의 출고가를 한눈에 비교해보세요</p>
+  <h1>🔬 과학·기술 뉴스 헤드라인</h1>
+  <p class="subtitle">물리·화학·지구과학·생명과학 및 AI·컴퓨터 분야 최신 뉴스와, 기사별 생기부 탐구주제 아이디어</p>
 </header>
 
 <main>
-  <section class="controls" aria-label="필터 및 정렬">
-    <div class="control-group brand-filter" role="group" aria-label="제조사 필터">
-      <button class="chip active" data-brand="all">전체</button>
-      <button class="chip" data-brand="samsung">삼성</button>
-      <button class="chip" data-brand="apple">애플</button>
-    </div>
+  <nav class="tabs" id="tabs" aria-label="분야 선택"></nav>
 
-    <div class="control-group">
-      <input type="search" id="searchInput" placeholder="모델명 검색 (예: Ultra, Pro)" aria-label="모델 검색">
-    </div>
+  <div class="toolbar">
+    <span id="feedMeta" class="feed-meta"></span>
+    <button id="refreshBtn" class="link-btn">🔄 새로고침</button>
+  </div>
 
-    <div class="control-group">
-      <label for="sortSelect" class="sr-only">정렬</label>
-      <select id="sortSelect" aria-label="정렬 기준">
-        <option value="price-asc">가격 낮은순</option>
-        <option value="price-desc">가격 높은순</option>
-        <option value="name-asc">이름순</option>
-        <option value="year-desc">최신순</option>
-      </select>
-    </div>
-  </section>
+  <section id="newsList" class="news-list" aria-live="polite"></section>
 
-  <section id="compareBar" class="compare-bar" hidden>
-    <div class="compare-bar-inner">
-      <span class="compare-label">비교 선택됨:</span>
-      <div id="compareChips" class="compare-chips"></div>
-      <button id="clearCompare" class="link-btn">선택 해제</button>
-      <button id="openCompare" class="btn-primary">비교하기</button>
-    </div>
-  </section>
-
-  <section id="productGrid" class="product-grid" aria-live="polite"></section>
-
-  <p id="emptyState" class="empty-state" hidden>검색 결과가 없습니다.</p>
+  <div id="statusBox" class="status-box" hidden></div>
 </main>
 
-<div id="compareModal" class="modal" hidden>
-  <div class="modal-backdrop" id="modalBackdrop"></div>
-  <div class="modal-panel" role="dialog" aria-modal="true" aria-label="가격 및 사양 비교">
-    <button class="modal-close" id="closeModal" aria-label="닫기">✕</button>
-    <h2>사양 비교</h2>
-    <div id="compareTableWrap"></div>
-  </div>
-</div>
-
 <footer class="site-footer">
-  <p>⚠️ 표시된 가격은 국내 자급제 출고가 기준 참고용 데이터이며, 실제 판매가는 통신사·매장·프로모션에 따라 달라질 수 있습니다. 정확한 가격은 삼성전자·애플 공식 스토어에서 확인하세요.</p>
+  <p>📰 헤드라인·요약은 각 언론사(ScienceDaily)의 공개 RSS 피드에서 가져오며, 전체 기사는 원문 링크에서 확인할 수 있습니다.</p>
+  <p>🎓 "생기부 탐구주제 추천"은 기사 제목·요약을 바탕으로 자동 생성된 참고용 아이디어입니다. 실제 학교생활기록부에는 본인이 직접 수행한 탐구 과정과 결과를 구체적으로 작성해야 하며, 활용 전 반드시 담당 선생님과 상담하세요.</p>
 </footer>
 
 <script src="script.js"></script>
