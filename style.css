@@ -139,10 +139,22 @@ main {
   color: var(--text-muted);
 }
 
+.source-badge {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .news-title {
   margin: 0 0 0.4rem;
   font-size: 1.05rem;
   line-height: 1.4;
+}
+
+.news-original {
+  margin: -0.2rem 0 0.5rem;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .news-title a {
